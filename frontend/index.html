@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salami App - Registration</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="registration-card">
+            <h1>Salami App Registration</h1>
+            <p class="subtitle">Register to receive salami payments</p>
+            
+            <!-- Debug Info -->
+            <div id="debugInfo" style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 12px; display: none;">
+                <strong>Debug:</strong>
+                <div id="debugStatus">Checking backend connection...</div>
+            </div>
+            
+            <form id="registrationForm">
+                <!-- Name Field -->
+                <div class="form-group">
+                    <label for="name">Full Name *</label>
+                    <input 
+                        type="text" 
+                        id="name" 
+                        name="name" 
+                        placeholder="Enter your full name"
+                        required
+                    >
+                </div>
+
+                <!-- Payment Method Selection -->
+                <div class="form-group">
+                    <label for="paymentMethod">Payment Method *</label>
+                    <select 
+                        id="paymentMethod" 
+                        name="paymentMethod"
+                        required
+                    >
+                        <option value="">-- Select Payment Method --</option>
+                        <option value="bKash">bKash</option>
+                        <option value="Nagad">Nagad</option>
+                    </select>
+                </div>
+
+                <!-- Payment Number Field -->
+                <div class="form-group">
+                    <label for="paymentNumber">Payment Number *</label>
+                    <input 
+                        type="text" 
+                        id="paymentNumber" 
+                        name="paymentNumber" 
+                        placeholder="Enter your payment number (11 digits)"
+                        pattern="[0-9]{11}"
+                        maxlength="11"
+                        required
+                    >
+                    <small class="help-text">Must be 11 digits</small>
+                </div>
+
+                <!-- Submit Button -->
+                <button type="submit" class="btn-submit">Register</button>
+            </form>
+
+            <!-- Success Message with Salami Amount -->
+            <div id="successMessage" class="success-message" style="display: none;">
+                <p>✓ Registration successful!</p>
+                <div class="salami-reward">
+                    <h2>🎉 Salami Reward 🎉</h2>
+                    <p class="salami-amount" id="salamiAmount"></p>
+                    <p class="salami-text">Your salami will be transferred to your payment account!</p>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="error-message" style="display: none;">
+                <p id="errorText"></p>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
