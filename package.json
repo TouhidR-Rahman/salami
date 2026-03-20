@@ -15,7 +15,7 @@
   "author": "AHNAF",
   "license": "ISC",
   "dependencies": {
-    "better-sqlite3": "^12.8.0"
+    "mongodb": "^7.1.0"
   },
   "type": "commonjs"
 }

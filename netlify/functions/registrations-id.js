@@ -1,7 +1,5 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { MongoClient, ObjectId } = require('mongodb');
 
-// Salami config
 const SALAMI_CONFIG = {
     minAmount: 1,
     maxAmount: 10,
@@ -13,41 +11,26 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-function getDatabase() {
-    // Use /tmp for Netlify, backend/data for local development
-    const DB_PATH = process.env.NETLIFY 
-        ? '/tmp/salami.db' 
-        : path.join(__dirname, '../../backend/data/salami.db');
+async function connectDB() {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+        throw new Error('MONGODB_URI environment variable is not set');
+    }
     
-    const db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
+    const client = new MongoClient(mongoUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+    });
     
-    // Initialize database schema if it doesn't exist
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS registrations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            paymentMethod TEXT NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
-            paymentNumber TEXT NOT NULL,
-            salamiAmount REAL NOT NULL DEFAULT 0,
-            registeredAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(paymentNumber, paymentMethod)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_paymentNumber ON registrations(paymentNumber);
-        CREATE INDEX IF NOT EXISTS idx_registeredAt ON registrations(registeredAt DESC);
-    `);
-    
-    return db;
+    await client.connect();
+    return client;
 }
 
 exports.handler = async (event, context) => {
     // Extract ID from path
     const id = event.path.split('/').pop();
     
-    if (!id || isNaN(id)) {
+    if (!id || !ObjectId.isValid(id)) {
         return {
             statusCode: 400,
             headers: { 'Content-Type': 'application/json' },
@@ -55,16 +38,17 @@ exports.handler = async (event, context) => {
         };
     }
 
+    let client;
     try {
-        const db = getDatabase();
+        client = await connectDB();
+        const db = client.db('salamiapp');
+        const collection = db.collection('registrations');
 
         // GET: Fetch single registration
         if (event.httpMethod === 'GET') {
-            const registration = db.prepare(
-                'SELECT * FROM registrations WHERE id = ?'
-            ).get(id);
+            const registration = await collection.findOne({ _id: new ObjectId(id) });
 
-            db.close();
+            await client.close();
 
             if (!registration) {
                 return {
@@ -83,6 +67,7 @@ exports.handler = async (event, context) => {
                 body: JSON.stringify({ 
                     success: true,
                     registration: {
+                        id: registration._id,
                         ...registration,
                         salamiFormatted: formatSalamiAmount(registration.salamiAmount)
                     }
@@ -92,12 +77,11 @@ exports.handler = async (event, context) => {
 
         // DELETE: Delete registration
         if (event.httpMethod === 'DELETE') {
-            const registration = db.prepare(
-                'SELECT * FROM registrations WHERE id = ?'
-            ).get(id);
+            const result = await collection.deleteOne({ _id: new ObjectId(id) });
 
-            if (!registration) {
-                db.close();
+            await client.close();
+
+            if (result.deletedCount === 0) {
                 return {
                     statusCode: 404,
                     headers: { 'Content-Type': 'application/json' },
@@ -108,16 +92,12 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            db.prepare('DELETE FROM registrations WHERE id = ?').run(id);
-            db.close();
-
             return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     success: true,
-                    message: 'Registration deleted successfully',
-                    registration: registration
+                    message: 'Registration deleted successfully'
                 })
             };
         }
@@ -127,12 +107,21 @@ exports.handler = async (event, context) => {
             const body = JSON.parse(event.body);
             const { name, paymentMethod, paymentNumber } = body;
 
-            const registration = db.prepare(
-                'SELECT * FROM registrations WHERE id = ?'
-            ).get(id);
+            const result = await collection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        name,
+                        paymentMethod,
+                        paymentNumber,
+                        updatedAt: new Date()
+                    }
+                }
+            );
 
-            if (!registration) {
-                db.close();
+            await client.close();
+
+            if (result.matchedCount === 0) {
                 return {
                     statusCode: 404,
                     headers: { 'Content-Type': 'application/json' },
@@ -143,32 +132,17 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            const stmt = db.prepare(`
-                UPDATE registrations 
-                SET name = ?, paymentMethod = ?, paymentNumber = ?, updatedAt = CURRENT_TIMESTAMP
-                WHERE id = ?
-            `);
-
-            stmt.run(name, paymentMethod, paymentNumber, id);
-
-            const updated = db.prepare(
-                'SELECT * FROM registrations WHERE id = ?'
-            ).get(id);
-
-            db.close();
-
             return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     success: true,
-                    message: 'Registration updated successfully',
-                    registration: updated
+                    message: 'Registration updated successfully'
                 })
             };
         }
 
-        db.close();
+        await client.close();
         return {
             statusCode: 405,
             headers: { 'Content-Type': 'application/json' },
@@ -177,18 +151,8 @@ exports.handler = async (event, context) => {
 
     } catch (error) {
         console.error('Error:', error);
+        if (client) await client.close();
         
-        if (error.message.includes('UNIQUE constraint failed')) {
-            return {
-                statusCode: 400,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    success: false,
-                    message: 'This payment number is already registered with this payment method' 
-                })
-            };
-        }
-
         return {
             statusCode: 500,
             headers: { 'Content-Type': 'application/json' },
@@ -198,4 +162,4 @@ exports.handler = async (event, context) => {
             })
         };
     }
-};
+}

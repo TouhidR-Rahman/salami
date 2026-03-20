@@ -1,7 +1,5 @@
-const Database = require('better-sqlite3');
-const path = require('path');
+const { MongoClient } = require('mongodb');
 
-// Salami config
 const SALAMI_CONFIG = {
     minAmount: 1,
     maxAmount: 10,
@@ -13,34 +11,19 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-function getDatabase() {
-    // Use /tmp for Netlify, backend/data for local development
-    const DB_PATH = process.env.NETLIFY 
-        ? '/tmp/salami.db' 
-        : path.join(__dirname, '../../backend/data/salami.db');
+async function connectDB() {
+    const mongoUri = process.env.MONGODB_URI;
+    if (!mongoUri) {
+        throw new Error('MONGODB_URI environment variable is not set');
+    }
     
-    const db = new Database(DB_PATH);
-    db.pragma('journal_mode = WAL');
+    const client = new MongoClient(mongoUri, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+    });
     
-    // Initialize database schema if it doesn't exist
-    db.exec(`
-        CREATE TABLE IF NOT EXISTS registrations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            paymentMethod TEXT NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
-            paymentNumber TEXT NOT NULL,
-            salamiAmount REAL NOT NULL DEFAULT 0,
-            registeredAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(paymentNumber, paymentMethod)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_paymentNumber ON registrations(paymentNumber);
-        CREATE INDEX IF NOT EXISTS idx_registeredAt ON registrations(registeredAt DESC);
-    `);
-    
-    return db;
+    await client.connect();
+    return client;
 }
 
 exports.handler = async (event, context) => {
@@ -53,19 +36,25 @@ exports.handler = async (event, context) => {
         };
     }
 
+    let client;
     try {
-        const db = getDatabase();
-        const registrations = db.prepare(
-            'SELECT * FROM registrations ORDER BY registeredAt DESC'
-        ).all();
+        client = await connectDB();
+        const db = client.db('salamiapp');
+        const collection = db.collection('registrations');
+
+        const registrations = await collection
+            .find({})
+            .sort({ registeredAt: -1 })
+            .toArray();
 
         // Format salami amounts
         const formatted = registrations.map(reg => ({
+            id: reg._id,
             ...reg,
             salamiFormatted: formatSalamiAmount(reg.salamiAmount)
         }));
 
-        db.close();
+        await client.close();
 
         return {
             statusCode: 200,
@@ -79,6 +68,8 @@ exports.handler = async (event, context) => {
         };
     } catch (error) {
         console.error('Error fetching registrations:', error);
+        if (client) await client.close();
+        
         return {
             statusCode: 500,
             headers: { 'Content-Type': 'application/json' },
@@ -88,4 +79,4 @@ exports.handler = async (event, context) => {
             })
         };
     }
-};
+}
