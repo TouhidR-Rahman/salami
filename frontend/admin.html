@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Salami App - Admin Dashboard</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      /* Login Screen */
+      .login-screen {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        z-index: 1000;
+      }
+
+      .login-screen.hidden {
+        display: none;
+      }
+
+      .login-card {
+        background: white;
+        padding: 40px;
+        border-radius: 10px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        width: 100%;
+        max-width: 400px;
+      }
+
+      .login-card h1 {
+        text-align: center;
+        margin-bottom: 30px;
+        color: #333;
+      }
+
+      .login-group {
+        margin-bottom: 20px;
+      }
+
+      .login-group label {
+        display: block;
+        margin-bottom: 8px;
+        color: #333;
+        font-weight: 500;
+      }
+
+      .login-group input {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #ddd;
+        border-radius: 5px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+
+      .login-group input:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      .login-btn {
+        width: 100%;
+        padding: 12px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .login-btn:hover {
+        background: #5568d3;
+      }
+
+      .login-error {
+        color: #dc3545;
+        margin-top: 10px;
+        text-align: center;
+        font-size: 14px;
+      }
+
+      /* Dashboard Screen */
+      .dashboard {
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+
+      .dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .dashboard-header h1 {
+        font-size: 28px;
+      }
+
+      .logout-btn {
+        background: rgba(255, 255, 255, 0.3);
+        color: white;
+        border: 2px solid white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+      }
+
+      .logout-btn:hover {
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      .dashboard-content {
+        padding: 30px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+      }
+
+      @media (max-width: 968px) {
+        .dashboard-content {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .panel {
+        border: 2px solid #ecf0f1;
+        border-radius: 8px;
+        padding: 20px;
+      }
+
+      .panel h2 {
+        margin-bottom: 20px;
+        color: #333;
+        border-bottom: 2px solid #667eea;
+        padding-bottom: 10px;
+      }
+
+      .form-group {
+        margin-bottom: 15px;
+      }
+
+      .form-group label {
+        display: block;
+        margin-bottom: 5px;
+        color: #555;
+        font-weight: 500;
+      }
+
+      .form-group input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 14px;
+      }
+
+      .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 5px rgba(102, 126, 234, 0.3);
+      }
+
+      .update-btn {
+        width: 100%;
+        padding: 12px;
+        background: #667eea;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.3s;
+        margin-top: 10px;
+      }
+
+      .update-btn:hover {
+        background: #5568d3;
+      }
+
+      .registrations-panel {
+        grid-column: 1 / -1;
+      }
+
+      .registrations-list {
+        max-height: 500px;
+        overflow-y: auto;
+      }
+
+      .registration-item {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .registration-info {
+        flex: 1;
+      }
+
+      .registration-info p {
+        margin: 5px 0;
+        font-size: 14px;
+        color: #555;
+      }
+
+      .registration-info strong {
+        color: #333;
+      }
+
+      .salami-amount {
+        font-size: 16px;
+        font-weight: bold;
+        color: #667eea;
+        margin: 5px 0;
+      }
+
+      .delete-btn {
+        background: #dc3545;
+        color: white;
+        border: none;
+        padding: 8px 12px;
+        border-radius: 5px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-left: 10px;
+        transition: background 0.3s;
+      }
+
+      .delete-btn:hover {
+        background: #c82333;
+      }
+
+      .empty-state {
+        text-align: center;
+        padding: 40px;
+        color: #999;
+      }
+
+      .message {
+        padding: 12px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+        display: none;
+      }
+
+      .message.show {
+        display: block;
+      }
+
+      .message.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+
+      .message.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+
+      .loading {
+        text-align: center;
+        padding: 20px;
+        color: #999;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+      <div class="login-card">
+        <h1>🔐 Admin Login</h1>
+        <form id="loginForm">
+          <div class="login-group">
+            <label for="adminPassword">Admin Password</label>
+            <input
+              type="password"
+              id="adminPassword"
+              name="password"
+              placeholder="Enter admin password"
+              required
+              autocomplete="off"
+            />
+          </div>
+          <button type="submit" class="login-btn">Login</button>
+          <div id="loginError" class="login-error"></div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard" style="display: none">
+      <div class="dashboard-header">
+        <h1>📊 Salami App Admin Dashboard</h1>
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+      </div>
+
+      <div class="dashboard-content">
+        <!-- Config Panel -->
+        <div class="panel">
+          <h2>⚙️ Configuration Settings</h2>
+          <div id="configMessage" class="message"></div>
+
+          <div class="form-group">
+            <label for="minAmount">Minimum Salami Amount</label>
+            <input
+              type="number"
+              id="minAmount"
+              min="0"
+              step="0.01"
+              placeholder="e.g., 1"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="maxAmount">Maximum Salami Amount</label>
+            <input
+              type="number"
+              id="maxAmount"
+              min="0"
+              step="0.01"
+              placeholder="e.g., 10"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="decimalPlaces">Decimal Places</label>
+            <input
+              type="number"
+              id="decimalPlaces"
+              min="0"
+              max="5"
+              placeholder="e.g., 2"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="unit">Salami Unit Name</label>
+            <input type="text" id="unit" placeholder="e.g., BDT, PKR, USD" />
+          </div>
+
+          <button class="update-btn" id="updateConfigBtn">
+            Update Configuration
+          </button>
+
+          <div
+            style="
+              margin-top: 20px;
+              padding: 15px;
+              background: #e7f3ff;
+              border-radius: 5px;
+              font-size: 13px;
+              color: #004085;
+            "
+          >
+            <strong>Current Settings:</strong>
+            <p id="currentConfig">Loading...</p>
+          </div>
+        </div>
+
+        <!-- Quick Stats Panel -->
+        <div class="panel">
+          <h2>📈 Quick Stats</h2>
+          <div style="padding: 20px 0">
+            <p
+              style="
+                margin: 15px 0;
+                padding: 15px;
+                background: #e7f3ff;
+                border-radius: 5px;
+              "
+            >
+              <strong>Total Registrations:</strong>
+              <span
+                id="totalRegistrations"
+                style="font-size: 20px; color: #667eea; font-weight: bold"
+                >-</span
+              >
+            </p>
+            <p
+              style="
+                margin: 15px 0;
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 5px;
+              "
+            >
+              <strong>Total Salami Distributed:</strong>
+              <span
+                id="totalSalamiDistributed"
+                style="font-size: 20px; color: #28a745; font-weight: bold"
+                >-</span
+              >
+            </p>
+            <button
+              class="update-btn"
+              id="refreshStatsBtn"
+              style="margin-top: 15px"
+            >
+              Refresh Stats
+            </button>
+          </div>
+        </div>
+
+        <!-- Registrations Panel -->
+        <div class="panel registrations-panel">
+          <h2>📋 Recent Registrations</h2>
+          <button
+            class="update-btn"
+            id="refreshRegistrationsBtn"
+            style="
+              margin-top: 0;
+              margin-bottom: 12px;
+              width: auto;
+              padding: 10px 16px;
+            "
+          >
+            Refresh Registrations
+          </button>
+          <div id="registrationsMessage" class="message"></div>
+
+          <div id="registrationsList" class="registrations-list">
+            <div class="loading">
+              <div class="spinner"></div>
+              <p>Loading registrations...</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="admin.js"></script>
+  </body>
+</html>
