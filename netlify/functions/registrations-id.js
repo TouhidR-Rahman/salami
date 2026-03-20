@@ -1,4 +1,4 @@
-const { Pool } = require('@neondatabase/serverless');
+const { MongoClient, ObjectId } = require('mongodb');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -11,34 +11,28 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function getPool() {
-    if (!process.env.DATABASE_URL) {
-        throw new Error('DATABASE_URL environment variable is not set. Please add it to Netlify environment variables.');
-    }
-    return new Pool({ connectionString: process.env.DATABASE_URL });
-}
+let mongoClient;
 
-async function initDB(client) {
-    await client.query(`
-        CREATE TABLE IF NOT EXISTS registrations (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
-            paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
-            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(paymentNumber, paymentMethod)
-        )
-    `);
+async function getMongoClient() {
+    if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI environment variable is not set. Please add it to Netlify environment variables.');
+    }
+    
+    if (!mongoClient) {
+        mongoClient = new MongoClient(process.env.MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        await mongoClient.connect();
+    }
+    return mongoClient;
 }
 
 exports.handler = async (event, context) => {
     // Extract ID from path
     const id = event.path.split('/').pop();
     
-    if (!id || isNaN(id)) {
+    if (!id || !ObjectId.isValid(id)) {
         return {
             statusCode: 400,
             headers: { 'Content-Type': 'application/json' },
@@ -46,22 +40,16 @@ exports.handler = async (event, context) => {
         };
     }
 
-    let client;
     try {
-        const pool = await getPool();
-        client = await pool.connect();
-        
-        await initDB(client);
+        const client = await getMongoClient();
+        const db = client.db('salamiapp');
+        const collection = db.collection('registrations');
 
         // GET: Fetch single registration
         if (event.httpMethod === 'GET') {
-            const result = await client.query(
-                'SELECT * FROM registrations WHERE id = $1',
-                [id]
-            );
+            const registration = await collection.findOne({ _id: new ObjectId(id) });
 
-            if (result.rows.length === 0) {
-                client.release();
+            if (!registration) {
                 return {
                     statusCode: 404,
                     headers: { 'Content-Type': 'application/json' },
@@ -72,17 +60,19 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            const registration = result.rows[0];
-            client.release();
-            
             return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     success: true,
                     registration: {
-                        ...registration,
-                        salamiFormatted: formatSalamiAmount(parseFloat(registration.salamiamount))
+                        id: registration._id,
+                        name: registration.name,
+                        paymentMethod: registration.paymentMethod,
+                        paymentNumber: registration.paymentNumber,
+                        salamiAmount: registration.salamiAmount,
+                        salamiFormatted: formatSalamiAmount(registration.salamiAmount),
+                        registeredAt: registration.registeredAt
                     }
                 })
             };
@@ -90,8 +80,18 @@ exports.handler = async (event, context) => {
 
         // DELETE: Delete registration
         if (event.httpMethod === 'DELETE') {
-            await client.query('DELETE FROM registrations WHERE id = $1', [id]);
-            client.release();
+            const result = await collection.deleteOne({ _id: new ObjectId(id) });
+
+            if (result.deletedCount === 0) {
+                return {
+                    statusCode: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        success: false,
+                        message: 'Registration not found' 
+                    })
+                };
+            }
 
             return {
                 statusCode: 200,
@@ -108,12 +108,28 @@ exports.handler = async (event, context) => {
             const body = JSON.parse(event.body);
             const { name, paymentMethod, paymentNumber } = body;
 
-            await client.query(
-                'UPDATE registrations SET name = $1, paymentMethod = $2, paymentNumber = $3, updatedAt = CURRENT_TIMESTAMP WHERE id = $4',
-                [name, paymentMethod, paymentNumber, id]
+            const result = await collection.updateOne(
+                { _id: new ObjectId(id) },
+                {
+                    $set: {
+                        name,
+                        paymentMethod,
+                        paymentNumber,
+                        updatedAt: new Date()
+                    }
+                }
             );
 
-            client.release();
+            if (result.matchedCount === 0) {
+                return {
+                    statusCode: 404,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        success: false,
+                        message: 'Registration not found' 
+                    })
+                };
+            }
 
             return {
                 statusCode: 200,
@@ -125,7 +141,6 @@ exports.handler = async (event, context) => {
             };
         }
 
-        client.release();
         return {
             statusCode: 405,
             headers: { 'Content-Type': 'application/json' },
@@ -134,7 +149,6 @@ exports.handler = async (event, context) => {
 
     } catch (error) {
         console.error('Error:', error);
-        if (client) client.release();
         
         return {
             statusCode: 500,

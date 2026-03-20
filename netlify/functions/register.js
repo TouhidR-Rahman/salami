@@ -1,4 +1,4 @@
-const { Pool } = require('@neondatabase/serverless');
+const { MongoClient } = require('mongodb');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -19,27 +19,21 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function getPool() {
-    if (!process.env.DATABASE_URL) {
-        throw new Error('DATABASE_URL environment variable is not set. Please add it to Netlify environment variables.');
-    }
-    return new Pool({ connectionString: process.env.DATABASE_URL });
-}
+let mongoClient;
 
-async function initDB(client) {
-    await client.query(`
-        CREATE TABLE IF NOT EXISTS registrations (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
-            paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
-            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(paymentNumber, paymentMethod)
-        )
-    `);
+async function getMongoClient() {
+    if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI environment variable is not set. Please add it to Netlify environment variables.');
+    }
+    
+    if (!mongoClient) {
+        mongoClient = new MongoClient(process.env.MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        await mongoClient.connect();
+    }
+    return mongoClient;
 }
 
 exports.handler = async (event, context) => {
@@ -52,19 +46,12 @@ exports.handler = async (event, context) => {
         };
     }
 
-    let client;
     try {
-        const pool = await getPool();
-        client = await pool.connect();
-        
-        await initDB(client);
-
         const body = JSON.parse(event.body);
         const { name, paymentMethod, paymentNumber } = body;
 
         // Validation
         if (!name || !paymentMethod || !paymentNumber) {
-            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -76,7 +63,6 @@ exports.handler = async (event, context) => {
         }
 
         if (!['bKash', 'Nagad'].includes(paymentMethod)) {
-            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -88,7 +74,6 @@ exports.handler = async (event, context) => {
         }
 
         if (!/^\d{11}$/.test(paymentNumber)) {
-            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -99,14 +84,14 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Check for duplicate
-        const existing = await client.query(
-            'SELECT * FROM registrations WHERE paymentNumber = $1 AND paymentMethod = $2',
-            [paymentNumber, paymentMethod]
-        );
+        // Connect to MongoDB
+        const client = await getMongoClient();
+        const db = client.db('salamiapp');
+        const collection = db.collection('registrations');
 
-        if (existing.rows.length > 0) {
-            client.release();
+        // Check for duplicate
+        const existing = await collection.findOne({ paymentNumber, paymentMethod });
+        if (existing) {
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -121,13 +106,18 @@ exports.handler = async (event, context) => {
         const salamiAmount = generateSalamiAmount();
 
         // Insert registration
-        const result = await client.query(
-            'INSERT INTO registrations (name, paymentMethod, paymentNumber, salamiAmount) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name.trim(), paymentMethod, paymentNumber, salamiAmount]
-        );
+        const result = await collection.insertOne({
+            name: name.trim(),
+            paymentMethod,
+            paymentNumber,
+            salamiAmount,
+            registeredAt: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+        });
 
-        const registration = result.rows[0];
-        client.release();
+        // Fetch the inserted record
+        const registration = await collection.findOne({ _id: result.insertedId });
 
         return {
             statusCode: 201,
@@ -136,15 +126,19 @@ exports.handler = async (event, context) => {
                 success: true,
                 message: 'Registration successful',
                 registration: {
-                    ...registration,
-                    salamiFormatted: formatSalamiAmount(parseFloat(registration.salamiamount))
+                    id: registration._id,
+                    name: registration.name,
+                    paymentMethod: registration.paymentMethod,
+                    paymentNumber: registration.paymentNumber,
+                    salamiAmount: registration.salamiAmount,
+                    salamiFormatted: formatSalamiAmount(registration.salamiAmount),
+                    registeredAt: registration.registeredAt
                 }
             })
         };
 
     } catch (error) {
         console.error('Registration error:', error);
-        if (client) client.release();
         
         return {
             statusCode: 500,

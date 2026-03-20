@@ -1,4 +1,4 @@
-const { Pool } = require('@neondatabase/serverless');
+const { MongoClient } = require('mongodb');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -11,27 +11,21 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function getPool() {
-    if (!process.env.DATABASE_URL) {
-        throw new Error('DATABASE_URL environment variable is not set. Please add it to Netlify environment variables.');
-    }
-    return new Pool({ connectionString: process.env.DATABASE_URL });
-}
+let mongoClient;
 
-async function initDB(client) {
-    await client.query(`
-        CREATE TABLE IF NOT EXISTS registrations (
-            id SERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
-            paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
-            paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
-            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(paymentNumber, paymentMethod)
-        )
-    `);
+async function getMongoClient() {
+    if (!process.env.MONGODB_URI) {
+        throw new Error('MONGODB_URI environment variable is not set. Please add it to Netlify environment variables.');
+    }
+    
+    if (!mongoClient) {
+        mongoClient = new MongoClient(process.env.MONGODB_URI, {
+            useNewUrlParser: true,
+            useUnifiedTopology: true,
+        });
+        await mongoClient.connect();
+    }
+    return mongoClient;
 }
 
 exports.handler = async (event, context) => {
@@ -45,18 +39,24 @@ exports.handler = async (event, context) => {
     }
 
     try {
-        // Initialize database
-        await initDB();
+        const client = await getMongoClient();
+        const db = client.db('salamiapp');
+        const collection = db.collection('registrations');
 
-        const registrations = await sql`
-            SELECT * FROM registrations 
-            ORDER BY registeredAt DESC
-        `;
+        const registrations = await collection
+            .find({})
+            .sort({ registeredAt: -1 })
+            .toArray();
 
         // Format salami amounts
         const formatted = registrations.map(reg => ({
-            ...reg,
-            salamiFormatted: formatSalamiAmount(reg.salamiamount)
+            id: reg._id,
+            name: reg.name,
+            paymentMethod: reg.paymentMethod,
+            paymentNumber: reg.paymentNumber,
+            salamiAmount: reg.salamiAmount,
+            salamiFormatted: formatSalamiAmount(reg.salamiAmount),
+            registeredAt: reg.registeredAt
         }));
 
         return {
@@ -77,7 +77,7 @@ exports.handler = async (event, context) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 success: false,
-                message: 'Error fetching registrations' 
+                message: 'Error fetching registrations: ' + error.message 
             })
         };
     }
