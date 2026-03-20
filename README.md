@@ -182,3 +182,4 @@ lsof -i :5000
 ✅ Web app (fully functional)
 
 Enjoy your Salami App! 🎉
+# Salami-Wapp
