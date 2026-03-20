@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { sql } = require('@neondatabase/serverless');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -11,19 +11,20 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function connectDB() {
-    const mongoUri = process.env.MONGODB_URI;
-    if (!mongoUri) {
-        throw new Error('MONGODB_URI environment variable is not set');
-    }
-    
-    const client = new MongoClient(mongoUri, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-    });
-    
-    await client.connect();
-    return client;
+async function initDB() {
+    const query = await sql`
+        CREATE TABLE IF NOT EXISTS registrations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
+            paymentNumber VARCHAR(11) NOT NULL,
+            salamiAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(paymentNumber, paymentMethod)
+        );
+    `;
 }
 
 exports.handler = async (event, context) => {
@@ -36,25 +37,20 @@ exports.handler = async (event, context) => {
         };
     }
 
-    let client;
     try {
-        client = await connectDB();
-        const db = client.db('salamiapp');
-        const collection = db.collection('registrations');
+        // Initialize database
+        await initDB();
 
-        const registrations = await collection
-            .find({})
-            .sort({ registeredAt: -1 })
-            .toArray();
+        const registrations = await sql`
+            SELECT * FROM registrations 
+            ORDER BY registeredAt DESC
+        `;
 
         // Format salami amounts
         const formatted = registrations.map(reg => ({
-            id: reg._id,
             ...reg,
-            salamiFormatted: formatSalamiAmount(reg.salamiAmount)
+            salamiFormatted: formatSalamiAmount(reg.salamiamount)
         }));
-
-        await client.close();
 
         return {
             statusCode: 200,
@@ -68,7 +64,6 @@ exports.handler = async (event, context) => {
         };
     } catch (error) {
         console.error('Error fetching registrations:', error);
-        if (client) await client.close();
         
         return {
             statusCode: 500,

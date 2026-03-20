@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { sql } = require('@neondatabase/serverless');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -19,19 +19,20 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function connectDB() {
-    const mongoUri = process.env.MONGODB_URI;
-    if (!mongoUri) {
-        throw new Error('MONGODB_URI environment variable is not set');
-    }
-    
-    const client = new MongoClient(mongoUri, {
-        useNewUrlParser: true,
-        useUnifiedTopology: true,
-    });
-    
-    await client.connect();
-    return client;
+async function initDB() {
+    const query = await sql`
+        CREATE TABLE IF NOT EXISTS registrations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
+            paymentNumber VARCHAR(11) NOT NULL,
+            salamiAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+            registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(paymentNumber, paymentMethod)
+        );
+    `;
 }
 
 exports.handler = async (event, context) => {
@@ -44,7 +45,6 @@ exports.handler = async (event, context) => {
         };
     }
 
-    let client;
     try {
         const body = JSON.parse(event.body);
         const { name, paymentMethod, paymentNumber } = body;
@@ -83,15 +83,19 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Connect to MongoDB
-        client = await connectDB();
-        const db = client.db('salamiapp');
-        const collection = db.collection('registrations');
+        // Initialize database
+        await initDB();
+
+        // Generate random salami amount
+        const salamiAmount = generateSalamiAmount();
 
         // Check for duplicate
-        const existing = await collection.findOne({ paymentNumber, paymentMethod });
-        if (existing) {
-            await client.close();
+        const existing = await sql`
+            SELECT * FROM registrations 
+            WHERE paymentNumber = ${paymentNumber} AND paymentMethod = ${paymentMethod}
+        `;
+
+        if (existing.length > 0) {
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -102,24 +106,14 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Generate random salami amount
-        const salamiAmount = generateSalamiAmount();
-
         // Insert registration
-        const result = await collection.insertOne({
-            name: name.trim(),
-            paymentMethod,
-            paymentNumber,
-            salamiAmount,
-            registeredAt: new Date(),
-            createdAt: new Date(),
-            updatedAt: new Date()
-        });
+        const result = await sql`
+            INSERT INTO registrations (name, paymentMethod, paymentNumber, salamiAmount)
+            VALUES (${name.trim()}, ${paymentMethod}, ${paymentNumber}, ${salamiAmount})
+            RETURNING *
+        `;
 
-        // Fetch the inserted record
-        const registration = await collection.findOne({ _id: result.insertedId });
-
-        await client.close();
+        const registration = result[0];
 
         return {
             statusCode: 201,
@@ -128,16 +122,14 @@ exports.handler = async (event, context) => {
                 success: true,
                 message: 'Registration successful',
                 registration: {
-                    id: registration._id,
                     ...registration,
-                    salamiFormatted: formatSalamiAmount(registration.salamiAmount)
+                    salamiFormatted: formatSalamiAmount(registration.salamiamount)
                 }
             })
         };
 
     } catch (error) {
         console.error('Registration error:', error);
-        if (client) await client.close();
         
         return {
             statusCode: 500,
