@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
-
+// Form submission handler
+document.getElementById('registrationForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     console.log('📝 Form submitted');
 
@@ -102,13 +103,18 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function showSuccess(registration) {
     const successMessage = document.getElementById('successMessage');
+    const registeredName = document.getElementById('registeredName');
     const salamiAmount = document.getElementById('salamiAmount');
     
     if (registration && registration.salamiFormatted) {
         salamiAmount.textContent = registration.salamiFormatted;
     }
     
-    successMessage.style.display = 'block';
+    if (registration && registration.name) {
+        registeredName.textContent = `${registration.name}!`;
+    }
+    
+    successMessage.style.display = 'flex';
 
     // Hide after 8 seconds
     setTimeout(() => {

@@ -9,14 +9,14 @@
 <body>
     <div class="container">
         <div class="registration-card">
-            <h1>Salami App Registration</h1>
-            <p class="subtitle">Register to receive salami payments</p>
+            <h1>EID MUBARAK</h1>
+            <p class="subtitle">Register to Receive EID Salami from "AHNAF"</p>
             
-            <!-- Debug Info -->
+            <!-- Debug Info
             <div id="debugInfo" style="background: #f0f0f0; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 12px; display: none;">
                 <strong>Debug:</strong>
                 <div id="debugStatus">Checking backend connection...</div>
-            </div>
+            </div> -->
             
             <form id="registrationForm">
                 <!-- Name Field -->
@@ -64,13 +64,13 @@
                 <button type="submit" class="btn-submit">Register</button>
             </form>
 
-            <!-- Success Message with Salami Amount -->
+            <!-- Success Message with Salami Amount (Modal) -->
             <div id="successMessage" class="success-message" style="display: none;">
-                <p>✓ Registration successful!</p>
                 <div class="salami-reward">
                     <h2>🎉 Salami Reward 🎉</h2>
                     <p class="salami-amount" id="salamiAmount"></p>
-                    <p class="salami-text">Your salami will be transferred to your payment account!</p>
+                    <p class="salami-text"><strong id="registeredName"></strong>Your salami will be transferred to your payment account shortly. THANK YOU!</p> 
+                    <p> <strong>&copy;AHNAF</strong> </p>
                 </div>
             </div>
 
@@ -80,6 +80,11 @@
             </div>
         </div>
     </div>
+
+    <!-- Copyright Footer -->
+    <footer class="copyright-footer">
+        <p>&copy;2026 Salami App. Designed & Developed by <strong>AHNAF</strong>.</p>
+    </footer>
 
     <script src="script.js"></script>
 </body>

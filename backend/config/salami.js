@@ -5,16 +5,16 @@
 
 const SALAMI_CONFIG = {
     // Minimum salami amount (in units - can be kg, pieces, etc.)
-    minAmount: 100,
+    minAmount: 1,
     
     // Maximum salami amount
-    maxAmount: 500,
+    maxAmount: 10,
     
     // Number of decimal places to show
     decimalPlaces: 2,
     
     // Unit name (e.g., "grams", "kg", "pieces")
-    unit: "grams"
+    unit: "BDT."
 };
 
 /**
