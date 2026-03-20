@@ -1,8 +1,8 @@
 [build]
   # Build directory where frontend files are located
   publish = "frontend"
-  # Command to install dependencies (both frontend and backend)
-  command = "npm --prefix backend install && npm --prefix backend prune --production"
+  # Command to install dependencies (root and backend)
+  command = "npm install && npm --prefix backend install && npm --prefix backend prune --production && npm prune --production"
   # Functions directory
   functions = "netlify/functions"
 

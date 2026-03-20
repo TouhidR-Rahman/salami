@@ -1,0 +1,21 @@
+{
+  "name": "salami-app",
+  "version": "1.0.0",
+  "description": "Salami App - Registration System with Netlify Functions",
+  "main": "index.js",
+  "scripts": {
+    "start": "cd backend && npm start",
+    "install-all": "npm install && cd backend && npm install"
+  },
+  "keywords": [
+    "salami",
+    "registration",
+    "payment"
+  ],
+  "author": "AHNAF",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
+  "type": "commonjs"
+}
