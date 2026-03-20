@@ -1,0 +1,51 @@
+[build]
+  # Build directory where frontend files are located
+  publish = "frontend"
+  # Command to install dependencies (both frontend and backend)
+  command = "npm --prefix backend install && npm --prefix backend prune --production"
+  # Functions directory
+  functions = "netlify/functions"
+
+# Rewrite API calls to Netlify Functions
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/register"
+  to = "/.netlify/functions/register"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/registrations"
+  to = "/.netlify/functions/registrations"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/registrations/:id"
+  to = "/.netlify/functions/registrations-id/:id"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/config/salami"
+  to = "/.netlify/functions/salami-config"
+  status = 200
+  force = true
+
+# SPA routing - redirect all other requests to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  # Don't redirect API calls or static assets
+  conditions = { NOT = {Path = ["/api/*", "/.netlify/functions/*", "/*.js", "/*.css", "/*.ico", "/*.json", "/*.svg", "/*.png", "/*.jpg", "/*.jpeg", "/*.gif"]} }
+
+# Environment variables
+[env]
+  NODE_ENV = "production"
+  NODE_VERSION = "20.0.0"
