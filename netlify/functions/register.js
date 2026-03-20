@@ -1,4 +1,4 @@
-const { sql } = require('@neondatabase/serverless');
+const { Pool } = require('@neondatabase/serverless');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -19,20 +19,24 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function initDB() {
-    const query = await sql`
+async function getPool() {
+    return new Pool({ connectionString: process.env.DATABASE_URL });
+}
+
+async function initDB(client) {
+    await client.query(`
         CREATE TABLE IF NOT EXISTS registrations (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
             paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
             registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(paymentNumber, paymentMethod)
-        );
-    `;
+        )
+    `);
 }
 
 exports.handler = async (event, context) => {
@@ -45,12 +49,19 @@ exports.handler = async (event, context) => {
         };
     }
 
+    let client;
     try {
+        const pool = await getPool();
+        client = await pool.connect();
+        
+        await initDB(client);
+
         const body = JSON.parse(event.body);
         const { name, paymentMethod, paymentNumber } = body;
 
         // Validation
         if (!name || !paymentMethod || !paymentNumber) {
+            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -62,6 +73,7 @@ exports.handler = async (event, context) => {
         }
 
         if (!['bKash', 'Nagad'].includes(paymentMethod)) {
+            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -73,6 +85,7 @@ exports.handler = async (event, context) => {
         }
 
         if (!/^\d{11}$/.test(paymentNumber)) {
+            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -83,19 +96,14 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Initialize database
-        await initDB();
-
-        // Generate random salami amount
-        const salamiAmount = generateSalamiAmount();
-
         // Check for duplicate
-        const existing = await sql`
-            SELECT * FROM registrations 
-            WHERE paymentNumber = ${paymentNumber} AND paymentMethod = ${paymentMethod}
-        `;
+        const existing = await client.query(
+            'SELECT * FROM registrations WHERE paymentNumber = $1 AND paymentMethod = $2',
+            [paymentNumber, paymentMethod]
+        );
 
-        if (existing.length > 0) {
+        if (existing.rows.length > 0) {
+            client.release();
             return {
                 statusCode: 400,
                 headers: { 'Content-Type': 'application/json' },
@@ -106,14 +114,17 @@ exports.handler = async (event, context) => {
             };
         }
 
-        // Insert registration
-        const result = await sql`
-            INSERT INTO registrations (name, paymentMethod, paymentNumber, salamiAmount)
-            VALUES (${name.trim()}, ${paymentMethod}, ${paymentNumber}, ${salamiAmount})
-            RETURNING *
-        `;
+        // Generate random salami amount
+        const salamiAmount = generateSalamiAmount();
 
-        const registration = result[0];
+        // Insert registration
+        const result = await client.query(
+            'INSERT INTO registrations (name, paymentMethod, paymentNumber, salamiAmount) VALUES ($1, $2, $3, $4) RETURNING *',
+            [name.trim(), paymentMethod, paymentNumber, salamiAmount]
+        );
+
+        const registration = result.rows[0];
+        client.release();
 
         return {
             statusCode: 201,
@@ -123,13 +134,14 @@ exports.handler = async (event, context) => {
                 message: 'Registration successful',
                 registration: {
                     ...registration,
-                    salamiFormatted: formatSalamiAmount(registration.salamiamount)
+                    salamiFormatted: formatSalamiAmount(parseFloat(registration.salamiamount))
                 }
             })
         };
 
     } catch (error) {
         console.error('Registration error:', error);
+        if (client) client.release();
         
         return {
             statusCode: 500,

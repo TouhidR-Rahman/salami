@@ -1,4 +1,4 @@
-const { sql } = require('@neondatabase/serverless');
+const { Pool } = require('@neondatabase/serverless');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -11,20 +11,24 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function initDB() {
-    const query = await sql`
+async function getPool() {
+    return new Pool({ connectionString: process.env.DATABASE_URL });
+}
+
+async function initDB(client) {
+    await client.query(`
         CREATE TABLE IF NOT EXISTS registrations (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
             paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
             registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(paymentNumber, paymentMethod)
-        );
-    `;
+        )
+    `);
 }
 
 exports.handler = async (event, context) => {

@@ -1,4 +1,4 @@
-const { sql } = require('@neondatabase/serverless');
+const { Pool } = require('@neondatabase/serverless');
 
 const SALAMI_CONFIG = {
     minAmount: 1,
@@ -11,20 +11,24 @@ function formatSalamiAmount(amount) {
     return `${amount.toFixed(SALAMI_CONFIG.decimalPlaces)} ${SALAMI_CONFIG.unit}`;
 }
 
-async function initDB() {
-    const query = await sql`
+async function getPool() {
+    return new Pool({ connectionString: process.env.DATABASE_URL });
+}
+
+async function initDB(client) {
+    await client.query(`
         CREATE TABLE IF NOT EXISTS registrations (
             id SERIAL PRIMARY KEY,
             name VARCHAR(255) NOT NULL,
             paymentMethod VARCHAR(50) NOT NULL CHECK(paymentMethod IN ('bKash', 'Nagad')),
             paymentNumber VARCHAR(11) NOT NULL,
-            salamiAmount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+            salamiAmount NUMERIC(10, 2) NOT NULL DEFAULT 0,
             registeredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(paymentNumber, paymentMethod)
-        );
-    `;
+        )
+    `);
 }
 
 exports.handler = async (event, context) => {
@@ -39,17 +43,22 @@ exports.handler = async (event, context) => {
         };
     }
 
+    let client;
     try {
-        // Initialize database
-        await initDB();
+        const pool = await getPool();
+        client = await pool.connect();
+        
+        await initDB(client);
 
         // GET: Fetch single registration
         if (event.httpMethod === 'GET') {
-            const result = await sql`
-                SELECT * FROM registrations WHERE id = ${id}
-            `;
+            const result = await client.query(
+                'SELECT * FROM registrations WHERE id = $1',
+                [id]
+            );
 
-            if (result.length === 0) {
+            if (result.rows.length === 0) {
+                client.release();
                 return {
                     statusCode: 404,
                     headers: { 'Content-Type': 'application/json' },
@@ -60,7 +69,9 @@ exports.handler = async (event, context) => {
                 };
             }
 
-            const registration = result[0];
+            const registration = result.rows[0];
+            client.release();
+            
             return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json' },
@@ -68,7 +79,7 @@ exports.handler = async (event, context) => {
                     success: true,
                     registration: {
                         ...registration,
-                        salamiFormatted: formatSalamiAmount(registration.salamiamount)
+                        salamiFormatted: formatSalamiAmount(parseFloat(registration.salamiamount))
                     }
                 })
             };
@@ -76,7 +87,8 @@ exports.handler = async (event, context) => {
 
         // DELETE: Delete registration
         if (event.httpMethod === 'DELETE') {
-            await sql`DELETE FROM registrations WHERE id = ${id}`;
+            await client.query('DELETE FROM registrations WHERE id = $1', [id]);
+            client.release();
 
             return {
                 statusCode: 200,
@@ -93,11 +105,12 @@ exports.handler = async (event, context) => {
             const body = JSON.parse(event.body);
             const { name, paymentMethod, paymentNumber } = body;
 
-            await sql`
-                UPDATE registrations 
-                SET name = ${name}, paymentMethod = ${paymentMethod}, paymentNumber = ${paymentNumber}, updatedAt = CURRENT_TIMESTAMP
-                WHERE id = ${id}
-            `;
+            await client.query(
+                'UPDATE registrations SET name = $1, paymentMethod = $2, paymentNumber = $3, updatedAt = CURRENT_TIMESTAMP WHERE id = $4',
+                [name, paymentMethod, paymentNumber, id]
+            );
+
+            client.release();
 
             return {
                 statusCode: 200,
@@ -109,6 +122,7 @@ exports.handler = async (event, context) => {
             };
         }
 
+        client.release();
         return {
             statusCode: 405,
             headers: { 'Content-Type': 'application/json' },
@@ -117,6 +131,7 @@ exports.handler = async (event, context) => {
 
     } catch (error) {
         console.error('Error:', error);
+        if (client) client.release();
         
         return {
             statusCode: 500,
@@ -127,4 +142,4 @@ exports.handler = async (event, context) => {
             })
         };
     }
-}
+};
